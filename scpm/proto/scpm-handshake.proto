@@ -1,0 +1,16 @@
+syntax = "proto3";
+option csharp_namespace = "scpm.handshake";
+package scpm;
+
+// Security channel handskae message
+
+message WhoAreYou {
+    string version = 1;
+    string publicKey = 2;
+    int32 sessionId = 3;
+}
+
+message WhoIAm {
+    string version = 1;
+    string securityKey = 2;
+}

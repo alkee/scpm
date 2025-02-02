@@ -1,0 +1,21 @@
+syntax = "proto3";
+option csharp_namespace = "scpm";
+package scpm;
+import "google/protobuf/empty.proto";
+
+message TestMessage2 {
+    string message3 = 1;
+    string message4 = 2;
+}
+
+message TestMessage {
+    string message = 1;
+    string message2 = 2;
+}
+
+
+message WhoAreYou {
+    int32 seed = 1;
+    string securityKey = 2;
+}
+
