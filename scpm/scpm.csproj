@@ -13,10 +13,11 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="proto\scpm.proto" GrpcServices="None" />
+    <Protobuf Include="proto\scpm-handshake.proto" GrpcServices="None" />
   </ItemGroup>
 
 </Project>

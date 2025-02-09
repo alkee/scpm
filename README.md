@@ -25,6 +25,7 @@ $ cd scpm/
 $ dotnet new classlib
 $ cd ../scpm-test/
 $ dotnet new xunit
+$ dotnet add reference ../scpm/
 $ cd ../
 $ dotnet new solution
 $ dotnet sln add scpm-test/
@@ -57,4 +58,33 @@ C# TCP 동작은 BeginRead 를 통해 buffer 를 제공해 read(NetworkStream) �
 하고 EndRead 로 모든 데이터를 소비하게되므로, 데이터 일부만 전송되는 경우를
 위해 buffer 를 직접 관리해주고, networkstream 으로부터 직접 읽어 사용할 수
 없어 MemoryStream 을 사용함. (networkstream 에는 이전에 쌓인 buffer 데이터가 없음)
+
+### stream 을 parameter 로 받고 return 으로 넘겨줄때 Dispose 복잡
+
+> `private static Stream Encrypt(Stream source, byte[] key, byte[] iv)`
+
+와 같은 함수라면 사용하는 쪽에서 using 을 해주어야 하는데, 원본을 그대로
+돌려주는 plain encrptyion 같은 경우 원본이 즉시 close 되어 문제가 있을 수 있다.
+
+```cs
+    using encStream = Encrypt(networkStream, key, iv);
+```
+
+따라서..
+
+> `private static byte[] Encrypt(Span<byte> buffer, byte[] key, byte[] iv)`
+
+와 같이 bytes 정보를 이용하고, 사용하는 쪽에서 필요한 경우 MemoryStream 등을
+이용하는것이 낫겠음.
+
+```cs
+    using encStream = new MemoryStream(Encrypt(buffer, key, iv));
+```
+
+### async/await 방식으로 변경
+
+```cs
+var whoareyou = await ReadMessage<WhoAreYou>(stream);
+```
+과 같은 형태로 handshake 하면 좀 더 직관적일 듯.
 

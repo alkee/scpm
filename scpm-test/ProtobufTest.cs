@@ -8,12 +8,12 @@ public class ProtobufTest
     [Fact]
     public void Test1()
     {
-        var m = new TestMessage
+        var m = new TestMessage1
         {
-            Message = "1",
+            Message1 = "1",
             Message2 = "2"
         };
-        var desc = TestMessage.Descriptor;
+        var desc = TestMessage1.Descriptor;
 
         Console.WriteLine($"index = {desc.Index} / {desc.Name} / {desc.Name.GetHashCode()}");
         var desc2 = TestMessage2.Descriptor;

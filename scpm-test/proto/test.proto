@@ -1,0 +1,13 @@
+syntax = "proto3";
+option csharp_namespace = "scpm_test";
+package scpm;
+
+message TestMessage1 {
+    string message1 = 1;
+    string message2 = 2;
+}
+
+message TestMessage2 {
+    string message3 = 1;
+    string message4 = 2;
+}

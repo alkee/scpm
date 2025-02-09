@@ -87,8 +87,8 @@ public class Acceptor : IDisposable
     private void Session_MessageArrived(Session session, object message)
     {
 #if DEBUG || UNITY_EDITOR
-            if (session.MessageDispatcher.HasDispatcher(message.GetType()) == false)
-                throw new ProtocolNotFoundException(message.GetType().Name + " has no dispatcher of services");
+        if (session.MessageDispatcher.HasDispatcher(message.GetType()) == false)
+            throw new ProtocolNotFoundException(message.GetType().Name + " has no dispatcher of services");
 #endif
 
         session.MessageDispatcher.InvokeUnsafe(session, message); // UnsafeMessageDispatcher 는 io thread 에서 바로 불리도록

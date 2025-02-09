@@ -4,13 +4,20 @@ package scpm;
 
 // Security channel handskae message
 
+// server to client - only plain first message
 message WhoAreYou {
     string version = 1;
-    string publicKey = 2;
-    int32 sessionId = 3;
+    string publicKey = 2; // rsa public key base64
 }
 
+// client to server - encoded by WhoAreYou.publicKey
 message WhoIAm {
     string version = 1;
-    string securityKey = 2;
+    string key = 2; // aes key base64
+    string iv = 3; // aes iv base64
+}
+
+// server to client - encoded by WhoIAm.security key
+message Handshake { // end of handshake
+    string publicKey = 1; // 정상적으로 decode 할 수 있는지 확인하기 위해
 }
