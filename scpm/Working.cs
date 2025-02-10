@@ -1,25 +1,11 @@
-using System.Collections.Concurrent;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Google.Protobuf;
-using scpm.handshake;
+using scpm.handshake; // proto messsages
 
 namespace scpm.working;
 
-
-// public interface IScpmChannel
-// {
-//     string Id { get; }
-//     void SetCryptor(Cryptor cryptor);
-//     void SetDispatcher(MessageDispatcher dispatcher);
-
-//     Task SendAsync(IMessage message, CancellationToken ct);
-//     // Task SendAsync(IMessage message, Cryptor cryptor);
-//     // Task<IMessage> ReadAsync(CancellationToken ct);
-//     // Task<IMessage> ReadAsync(Cryptor cryptor);
-// }
 
 public class MessageHandlerAttribute : Attribute { }
 
@@ -28,8 +14,8 @@ public class MessageDispatcher
     public MessageDispatcher(object container)
     {
         var count = AddContainer(container);
-        if (count == 0)
-            throw new ApplicationException($"container has no handler : {container.GetType()}");
+        // if (count == 0)
+        //     throw new ApplicationException($"container has no handler : {container.GetType()}");
     }
 
     public int Dispatch(IMessage message)
@@ -91,7 +77,7 @@ internal class Handshaker
             Version = HANDSHAKE_VERSION,
             Key = aes.KeyBase64,
             Iv = aes.IVBase64
-        }, aes, ct);
+        }, rsa, ct);
         var handshake = await Channel.ReadMessageAsync<Handshake>(stream, buffer, aes, ct);
         // TODO: validate handshake.PublicKey
         return aes;
@@ -135,19 +121,30 @@ public class Channel
     private readonly TcpClient client;
     private Cryptor cryptor = new();
     private MessageDispatcher dispatcher;
-    private readonly ConcurrentQueue<IMessage> unhandledMessages = [];
+    // private readonly ConcurrentQueue<IMessage> unhandledMessages = [];
 
 
     public void SetCryptor(Cryptor cryptor)
     {
+        this.cryptor = cryptor;
     }
 
     public void SetDispatcher(MessageDispatcher dispatcher)
     {
+        this.dispatcher = dispatcher;
     }
 
-    public async Task SendAsync(IMessage message, CancellationToken ct)
+    public async Task SendAsync(IMessage message, CancellationToken ct = default)
     {
+        try
+        {
+            await SendMessageAsync(client.GetStream(), message, cryptor, ct);
+        }
+        catch (Exception e)
+        {
+            // network error 인 경우 Read 쪽에서 Closed 발생할것이기에 logging 만.
+            Debug.WriteLine($"[{ID}] error on send. message:{message.GetType()}, error:{e}");
+        }
     }
 
     public void Close()
@@ -188,10 +185,11 @@ public class Channel
             throw new ApplicationException("connection closed");
         var messageBlockSize = BitConverter.ToInt32(buffer);
         readSize = await stream.ReadAsync(buffer.AsMemory(0, messageBlockSize), ct);
-        var typeId = BitConverter.ToInt32(buffer);
+        var decoded = cryptor.Decrypt(buffer[..readSize]);
+        var typeId = BitConverter.ToInt32(decoded);
         if (readSize != messageBlockSize)
             throw new ApplicationException($"invalid readata size of type: {typeId}, size: {readSize} / {messageBlockSize}");
-        return ProtoSerializer.Deserialize(buffer)
+        return ProtoSerializer.Deserialize(decoded)
             ?? throw new ApplicationException($"failed to deserialize. typeid: {BitConverter.ToInt32(buffer)}, size: {readSize}");
     }
 
@@ -220,129 +218,15 @@ public class Channel
     {
         var buffer = new byte[1_024 * 20]; // 안정적인 서비스를 위해 가장 큰 메시지 크기로. (가변인 경우 잘못된 데이터에 의해 위험)
         var stream = client.GetStream();
-        var dataSize = 0;
         while (true)
         {
+            var message = await ReadMessageAsync(stream, buffer, cryptor, ct);
+            // TODO: 성능을 올리려면 message 를 별도 queue 로 빼고 worker thread 이용
+            dispatcher.Dispatch(message);
+            await Task.Yield();
             ct.ThrowIfCancellationRequested();
-
-
-            // try
-            // {
-            //     dataSize = await ReadDataAsync(stream, buffer, dataSize, ct);
-            // }
-            // catch (Exception e)
-            // {
-            //     Closed(this, e);
-            //     throw;
-            // }
-            // var blocks = SplitMessageBlocks(buffer, out var processed);
-            // if (processed == 0) continue;
-            // foreach (var block in blocks)
-            // {
-            //     var message = GetMessage(block.Span, cryptor)
-            //         ?? throw new ApplicationException($"invalid message");
-            //     unhandledMessages.Enqueue(message);
-            // }
-
-            // // 모든 작업이 끝난 이후에 메모리 정리
-            // var remain = dataSize - processed;
-            // CopyToHeadPosition(buffer, processed, remain);
-            // await Task.Yield();
         }
     }
-
-    private async Task<int> ReadDataAsync(NetworkStream stream, byte[] buffer, int offset, CancellationToken ct)
-    {
-        var receivedSize = await stream.ReadAsync(
-            buffer.AsMemory(offset, buffer.Length - offset), ct
-        );
-        ct.ThrowIfCancellationRequested();
-        if (receivedSize == 0)
-        {
-            Debug.Assert(client.Connected == false);
-            throw new ApplicationException("closed by peer");
-        }
-        offset += receivedSize; // next receive point
-        return offset;
-    }
-
-    private void CopyToHeadPosition(byte[] buffer, int offset, int length)
-    {
-        if (offset == 0)
-            return;
-        if (offset + length > buffer.Length)
-            throw new IndexOutOfRangeException();
-        Array.Copy(buffer, offset, buffer, 0, length);
-    }
-
-    // private List<IMessage> Parse(byte[] buffer, Cryptor crpytor, ref int dataSize)
-    // {
-    //     var messages = GetMessages(buffer, crpytor, out var processedSize);
-    //     if (processedSize == 0) return [];
-    //     var remainSize = dataSize - processedSize; // remained data size
-    //     if (remainSize > 0) // offset 을 0 으로 옮기기
-    //     { // TODO: blockcopy 가 더 성능이 좋으려나?
-    //         Array.Copy(buffer, processedSize, buffer, 0, remainSize);
-    //     }
-    //     dataSize = remainSize;
-    //     return messages;
-    // }
-
-    private IMessage? GetMessage(ReadOnlySpan<byte> buffer, Cryptor cryptor)
-    {
-        var decodedBytes = cryptor.Decrypt(buffer.ToArray());
-        return ProtoSerializer.Deserialize(decodedBytes.AsSpan());
-    }
-
-
-    // private List<IMessage> GetMessages(Span<byte> buffer, Cryptor cryptor, out int processed)
-    // {
-    //     var parsed = new List<IMessage>();
-    //     processed = 0;
-    //     for (var message = GetMessage(buffer, cryptor, out var parsedSize)
-    //         ; message != null
-    //         ; message = GetMessage(buffer.Slice(processed), cryptor, out parsedSize))
-    //     {
-    //         processed += parsedSize;
-    //         parsed.Add(message);
-    //     }
-    //     return parsed;
-    // }
-
-    private List<ReadOnlyMemory<byte>> SplitMessageBlocks(ReadOnlyMemory<byte> buffer, out int processed)
-    { // Span 은 ref struct 여서 type parameter 가 될 수 없어 CS9244
-        processed = 0;
-        const int SIZE_HEADER_LENGTH = sizeof(int);
-
-        var blocks = new List<ReadOnlyMemory<byte>>();
-        while (processed + SIZE_HEADER_LENGTH < buffer.Length)
-        {
-            var header = buffer.Slice(processed, SIZE_HEADER_LENGTH).Span;
-            var contentSize = BitConverter.ToInt32(header);
-            var blockSize = SIZE_HEADER_LENGTH + contentSize;
-            if (processed + blockSize > buffer.Length)
-                return blocks;
-            blocks.Add(buffer.Slice(processed + SIZE_HEADER_LENGTH, contentSize));
-            processed += blockSize;
-        }
-        return blocks;
-    }
-
-    // private IMessage? GetMessage(Span<byte> buffer, Cryptor cryptor, out int processed)
-    // {
-    //     processed = 0;
-    //     const int SIZE_HEADER_LENGTH = sizeof(int);
-    //     // not enough size data ; 첫 4 byte 는 항상 크기 정보
-    //     if (buffer.Length <= SIZE_HEADER_LENGTH) return null;
-    //     var messageSize = BitConverter.ToInt32(buffer);
-    //     if (buffer.Length < messageSize + SIZE_HEADER_LENGTH) return null;
-
-    //     // TODO: 복사(ToArray) 피하기. Decrypt 시 MemoryStream 이 Span 을 지원하지 않아 parameter 로 할 수 없음.
-    //     var messageBytes = buffer.Slice(SIZE_HEADER_LENGTH).ToArray();
-    //     var decrypted = cryptor.Decrypt(messageBytes);
-    //     processed = SIZE_HEADER_LENGTH + messageSize;
-    //     return ProtoSerializer.Deserialize(decrypted);
-    // }
 }
 
 
@@ -354,6 +238,8 @@ public class ScmpmServer
     private readonly int tcpPort;
     private readonly MessageDispatcher dispatcher;
     private readonly List<Channel> channels = [];
+
+    public bool IsListening { get; private set; } = false;
 
     public ScmpmServer(MessageDispatcher dispatcher, int tcpPort)
     {
@@ -371,17 +257,27 @@ public class ScmpmServer
             foreach (var channel in channels)
                 channel.Close();
             channels.Clear();
+            IsListening = false;
         });
 
+        IsListening = true;
+        Debug.WriteLine($"{GetType()} listening: {tcpPort}");
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             var client = await listener.AcceptTcpClientAsync(ct);
             var channel = new Channel(client, dispatcher);
+            Debug.WriteLine($"[{channel.ID}] Accepted");
+            channel.Connected += (channel) =>
+            {
+                Debug.WriteLine($"[{channel.ID}] handshaked on server");
+                Connected(channel);
+            };
             channel.Closed += (channel, exception) =>
             {
-                Debug.WriteLine($"connection closed. {channel.ID} : {exception.Message}");
+                Debug.WriteLine($"[{channel.ID}] connection closed. error: {exception}");
                 lock (channels) channels.Remove(channel);
+                Closed(channel);
             };
             lock (channels) channels.Add(channel);
             channel.SetDispatcher(dispatcher);
@@ -392,78 +288,93 @@ public class ScmpmServer
     public void Stop()
     { // close all connection
     }
-
-    // private async Task ReadAsync(TcpClient client, CancellationToken ct)
-    // {
-    //     using var _ = Defer.Create(() => { channels.Remove(client, out var _); });
-
-    //     var buffer = new byte[1_024 * 20];
-    //     var stream = client.GetStream();
-    //     var currentDispatcher = new MessageDispatcher(new HandshakeHandler());
-    //     var currentCrpytor = new Cryptor();
-    //     var dataSize = 0;
-
-    //     while (true)
-    //     {
-    //         var receivedSize = await stream.ReadAsync(
-    //             buffer.AsMemory(dataSize, buffer.Length - dataSize), ct
-    //         );
-    //         ct.ThrowIfCancellationRequested();
-    //         var channel = channels[client];
-    //         if (receivedSize == 0)
-    //         { // graceful close
-    //             if (channel != null) Closed(channel);
-    //             return;
-    //         }
-    //         dataSize += receivedSize; // next receive point
-    //         var messages = GetMessages(buffer, currentCrpytor, out var processedSize);
-    //         if (processedSize == 0) continue;
-    //         var remainSize = dataSize - processedSize; // remained data size
-    //         if (remainSize > 0) // offset 을 0 으로 옮기기
-    //         { // TODO: blockcopy 가 더 성능이 좋으려나?
-    //             Array.Copy(buffer, processedSize, buffer, 0, remainSize);
-    //         }
-    //         dataSize = remainSize;
-    //     }
-    // }
-
-
-
-
-}
-
-public class ServerChannel
-{
 }
 
 
 public class ScpmClient
 {
+
+    private readonly TcpClient client;
+    private readonly MessageDispatcher dispatcher;
+    private Channel? channel = null;
+
+    // ScpmClient 에서 Connect 개념은 handshake 가 이루어졌는지를 기준으로.
+    public bool IsConnected { get; private set; } = false;
+
+    public event Action<Channel> Connected = delegate { };
+    public event Action<Channel, Exception> Disconnected = delegate { };
+
     public ScpmClient(MessageDispatcher dispatcher)
     {
         this.dispatcher = dispatcher;
+        this.client = new();
     }
 
-    public event Action<ScpmClient> Disconnected = delegate { };
+    public ScpmClient(TcpClient connectedClient, MessageDispatcher dispatcher)
+    {
+        this.channel = new(connectedClient, dispatcher);
+        this.dispatcher = dispatcher;
+        this.client = connectedClient;
+    }
 
     public async Task SendAsync(IMessage message)
     {
+        if (IsConnected == false || channel == null)
+            throw new InvalidOperationException($"unable to send before handshake");
+        await channel.SendAsync(message);
     }
 
-    public async Task<Channel?> ConnectAsync(string host, int port)
+    public async Task BeginAsync(string host, int tcpPort, CancellationToken ct = default)
     {
-        return null;
+        IsConnected = false;
+        Debug.WriteLine($"{GetType()} connecting: {host}:{tcpPort}");
+        await client.ConnectAsync(host, tcpPort);
+        if (client.Connected == false) return;
+        channel = new Channel(client, dispatcher);
+        channel.Closed += (channel, exception) =>
+        {
+            Debug.WriteLine($"[{channel.ID}] closed. error: {exception}");
+            IsConnected = false;
+            Disconnected(channel, exception);
+        };
+        channel.Connected += (channel) =>
+        {
+            Debug.WriteLine($"[{channel.ID}] handshaked on client");
+            IsConnected = true;
+            Connected(channel);
+        };
+        Debug.WriteLine($"[{channel.ID}] connected, now receiving.");
+        await channel.BeginReceiveAsync(false, ct);
     }
 
-    private readonly TcpClient client = new();
-    private readonly MessageDispatcher dispatcher;
+    public void Close()
+    {
+        channel?.Close();
+    }
 }
 
 public static class Tester
 {
+    internal sealed class TestMessageHandler
+    {
+    }
+
     public static async Task<bool> Test()
     {
-        await Task.Yield();
+        const int TEST_PORT = 4684;
+        var dispatcher = new MessageDispatcher(new TestMessageHandler());
+        var server = new ScmpmServer(dispatcher, TEST_PORT);
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        _ = server.StartAsync(cts.Token);
+        while (server.IsListening == false)
+            await Task.Yield();
+        var client = new ScpmClient(dispatcher);
+        _ = client.BeginAsync("localhost", TEST_PORT, cts.Token);
+        while (client.IsConnected == false && cts.IsCancellationRequested == false)
+            await Task.Yield();
+
+        cts.Cancel();
         return true;
     }
 }

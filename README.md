@@ -88,3 +88,24 @@ var whoareyou = await ReadMessage<WhoAreYou>(stream);
 ```
 과 같은 형태로 handshake 하면 좀 더 직관적일 듯.
 
+
+### CryptographicException: Padding is invalid and cannot be removed.
+
+```cs
+var aes = new AESCryptor();
+var handshake = await Channel.ReadMessageAsync<Handshake>(stream, buffer, aes, ct);
+```
+
+와 같은 상황에서 발생.
+
+Encepytion 시에 `CryptoStream` 를 사용하는데,
+
+```cs
+        using var stream = new CryptoStream(buffer, encryptor, CryptoStreamMode.Write);
+        stream.Write(bytes);
+        stream.Flush();        
+```
+
+이 때 `.Flush()` 를 사용하면 aes padding 을 사용하지 않는 듯 해
+`.FlushFinalBlock()` 를 호출하도록 변경해 동작 확인.
+

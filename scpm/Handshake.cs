@@ -39,12 +39,12 @@ public sealed class RSACryptor
 
     public override byte[] Encrypt(byte[] bytes)
     {
-        return rsa.Encrypt(bytes, RSAEncryptionPadding.OaepSHA1);
+        return rsa.Encrypt(bytes, RSAEncryptionPadding.Pkcs1);
     }
 
     public override byte[] Decrypt(byte[] bytes)
     {
-        return rsa.Decrypt(bytes, RSAEncryptionPadding.OaepSHA1);
+        return rsa.Decrypt(bytes, RSAEncryptionPadding.Pkcs1);
     }
 
     private readonly RSA rsa = RSA.Create();
@@ -53,16 +53,18 @@ public sealed class RSACryptor
 public sealed class AESCryptor
     : Cryptor, IDisposable
 {
-    public AESCryptor()
-    {
-        aes.GenerateKey();
-        aes.GenerateIV();
-    }
 
-    public AESCryptor(byte[] key, byte[] iv)
+    public AESCryptor(byte[]? key = null, byte[]? iv = null)
     {
-        aes.Key = key;
-        aes.IV = iv;
+        if (key is null)
+            aes.GenerateKey();
+        else
+            aes.Key = key;
+        if (iv is null)
+            aes.GenerateIV();
+        else
+            aes.IV = iv;
+        aes.Padding = PaddingMode.PKCS7;
     }
 
     public AESCryptor(string base64key, string base64iv)
@@ -89,7 +91,7 @@ public sealed class AESCryptor
         using var buffer = new MemoryStream();
         using var stream = new CryptoStream(buffer, encryptor, CryptoStreamMode.Write);
         stream.Write(bytes);
-        stream.Flush();
+        stream.FlushFinalBlock();
         return buffer.ToArray();
     }
 
