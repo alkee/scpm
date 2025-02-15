@@ -7,6 +7,9 @@ using scpm.Security;
 
 namespace scpm.Net;
 
+/// <summary>
+///     Protobuf message communication channel
+/// </summary>
 public interface IChannel
     : IIdentifiable
 {
@@ -51,7 +54,18 @@ internal class Channel
     public async Task<IMessage> ReadMessageAsync(CancellationToken ct)
     {
         var stream = client.GetStream();
-        return await ReadMessageAsync(stream, buffer, cryptor, ct);
+        try
+        {
+            return await ReadMessageAsync(stream, buffer, cryptor, ct);
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine($"Error on ReadMessageAsync: {e}");
+            // message handling 을 실패하는 경우 buffer, protocol 규칙에 따라
+            //   더이상 유효하지 않게되므로 연결 종료
+            client.Close();
+            throw;
+        }
     }
     #endregion IChannel implementation
 

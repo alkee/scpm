@@ -4,9 +4,12 @@ using Google.Protobuf;
 
 namespace scpm.Net;
 
+/// <summary>
+///     TCP client(connector) for Protobuf message communication
+/// </summary>
 public class Client
 {
-    public bool IsConnected => channel != null;
+    public bool IsConnected => channel != null && client.Connected;
 
     private readonly TcpClient client;
     private Channel? channel = null;

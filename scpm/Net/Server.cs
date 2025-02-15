@@ -5,6 +5,9 @@ using Google.Protobuf;
 
 namespace scpm.Net;
 
+/// <summary>
+///     TCP listener(acceptor) for Protobuf message communication
+/// </summary>
 public class Server
 {
     public event Action<IChannel> Handshaked = delegate { };
@@ -12,11 +15,18 @@ public class Server
     public event Action<IChannel> Closed = delegate { };
 
     private readonly int tcpPort;
+    private readonly TimeSpan messageTimeout;
     private static readonly Handshaker handshaker = new ServerHandshaker();
 
-    public Server(int tcpPort)
+    public Server(int tcpPort, TimeSpan messageTimeout)
     {
         this.tcpPort = tcpPort;
+        this.messageTimeout = messageTimeout;
+    }
+
+    public Server(int tcpPort)
+        : this(tcpPort, TimeSpan.MaxValue) // infinity timeout
+    {
     }
 
     public async Task StartAsync(CancellationToken ct)
@@ -46,26 +56,38 @@ public class Server
         }
     }
 
+    private CancellationTokenSource CreateMessageTimeoutTokenSource()
+    {
+        return messageTimeout == TimeSpan.MaxValue
+            ? new CancellationTokenSource()
+            : new CancellationTokenSource(messageTimeout);
+    }
+
     private async Task KeepReceivingMessage(TcpClient client, CancellationToken ct)
     {
-        IChannel? c = null;
+        Debug.Assert(client.Connected);
+        Channel? channel = null; // try/using scope 밖에서도 정보를 얻기 위해
         try
         {
-            var cryptor = await handshaker.HandshakeAsync(client.GetStream(), ct);
-            var channel = new Channel(client, cryptor);
-            c = channel;
+            using (var messageTimeoutCts = CreateMessageTimeoutTokenSource())
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(messageTimeoutCts.Token, ct);
+                var cryptor = await handshaker.HandshakeAsync(client.GetStream(), cts.Token);
+                channel = new Channel(client, cryptor);
+            }
             var available = client.GetStream().DataAvailable;
             Handshaked(channel);
             while (channel.IsConnected && ct.IsCancellationRequested == false)
             {
-                ct.ThrowIfCancellationRequested();
-                var message = await channel.ReadMessageAsync(ct);
+                using var messageTimeoutCts = CreateMessageTimeoutTokenSource();
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(messageTimeoutCts.Token, ct);
+                var message = await channel.ReadMessageAsync(cts.Token);
                 MessageReceived(channel, message);
             }
         }
         catch (Exception e)
         {
-            Debug.WriteLine($"Error: {e}");
+            Debug.WriteLine($"Failed to receive message: {e}");
 #if DEBUG
             throw;
 #else
@@ -74,7 +96,8 @@ public class Server
         }
         finally
         {
-            if (c != null) Closed(c);
+            if (channel != null) Closed(channel);
+            client.Close();
             client.Dispose();
         }
     }

@@ -131,3 +131,54 @@ Server 에서 Channel 을 생성하고 결국 어떤 형태로든 connection 과
 
 다수의 channel event 를 처리해야하는 server 는 어쩔 수 없이 event 방식으로 유지.
 Chnnael 및 Client 는 async/await 방식으로 유지.
+
+
+### message timeout
+
+일정시간동안 client 로부터 message 가 없는 경우 timeout 으로 연결을 끊는 server
+기능을 추가. 이전의 cancelation token 과 새로운 timeout cancelation 을 이용하기
+위해 [CancellationTokenSource.CreateLinkedTokenSource](https://learn.microsoft.com/ko-kr/dotnet/standard/threading/how-to-listen-for-multiple-cancellation-requests)
+사용. `new CancellationTokenSource(TimeSpan.MaxValue)` 를 사용하는 경우 범위초과
+exception 이 발생해 기본 생성자를 사용하는 별도 함수 이용.
+
+```cs
+    private CancellationTokenSource CreateMessageTimeoutTokenSource()
+    {
+        return messageTimeout == TimeSpan.MaxValue
+            ? new CancellationTokenSource()
+            : new CancellationTokenSource(messageTimeout);
+    }
+```
+
+link 전 timeout `CancelationTokenSource` 을 `TryReset()` 해서는 timeout reset
+이 되지 않는 듯 하다.
+
+따라서.. 좀 무식하지만,
+
+```cs
+    private async Task KeepReceivingMessage(TcpClient client, CancellationToken ct)
+    {
+        Channel? channel = null; // try/using scope 밖에서도 정보를 얻기 위해
+        try
+        {
+            using (var messageTimeoutCts = CreateMessageTimeoutTokenSource())
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(messageTimeoutCts.Token, ct);
+                var cryptor = await handshaker.HandshakeAsync(client.GetStream(), cts.Token);
+                channel = new Channel(client, cryptor);
+            }
+            var available = client.GetStream().DataAvailable;
+            Handshaked(channel);
+            while (channel.IsConnected && ct.IsCancellationRequested == false)
+            {
+                using var messageTimeoutCts = CreateMessageTimeoutTokenSource();
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(messageTimeoutCts.Token, ct);
+                var message = await channel.ReadMessageAsync(cts.Token);
+                MessageReceived(channel, message);
+            }
+        }
+```
+
+와 같은 방식만 적용 가능.
+
+
