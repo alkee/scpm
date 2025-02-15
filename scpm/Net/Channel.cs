@@ -7,47 +7,39 @@ using scpm.Security;
 
 namespace scpm.Net;
 
-
-public class Channel
+public interface IChannel
+    : IIdentifiable
 {
-    public string ID { get; } = Guid.NewGuid().ToString();
+    bool IsConnected { get; }
+    NetworkStream GetStream();
+    void Close();
+    Task SendAsync(IMessage message, CancellationToken ct = default);
+    Task<IMessage> ReadMessageAsync(CancellationToken ct);
+}
 
-    public Channel(TcpClient connectedClient, MessageDispatcher<Channel> dispatcher)
+internal class Channel
+    : SerialObject
+    , IChannel
+{
+    public Channel(TcpClient handshakedClient, Cryptor crpytor)
     {
-        Debug.Assert(connectedClient.Connected);
-        this.client = connectedClient;
-        this.dispatcher = dispatcher;
+        Debug.Assert(handshakedClient.Connected);
+        this.client = handshakedClient;
+        this.cryptor = crpytor;
     }
 
-    public event Action<Channel> Connected = delegate { };
-    public event Action<Channel, Exception> Closed = delegate { };
-
-    private Cryptor cryptor = new NullCryptor();
     private readonly TcpClient client;
-    private MessageDispatcher<Channel> dispatcher;
+    private readonly Cryptor cryptor;
+    private readonly byte[] buffer = new byte[1_024 * 20]; // 안정적인 서비스를 위해 가장 큰 메시지 크기로. (가변인 경우 잘못된 데이터에 의해 위험)
 
+    #region IChannel implementation
+    public bool IsConnected => client.Connected;
 
-    internal void SetCryptor(Cryptor cryptor)
+    public NetworkStream GetStream() => client.GetStream();
+
+    public async Task SendAsync(IMessage message, CancellationToken ct)
     {
-        this.cryptor = cryptor;
-    }
-
-    public void SetDispatcher(MessageDispatcher<Channel> dispatcher)
-    {
-        this.dispatcher = dispatcher;
-    }
-
-    public async Task SendAsync(IMessage message, CancellationToken ct = default)
-    {
-        try
-        {
-            await SendMessageAsync(client.GetStream(), message, cryptor, ct);
-        }
-        catch (Exception e)
-        {
-            // network error 인 경우 Read 쪽에서 Closed 발생할것이기에 logging 만.
-            Debug.WriteLine($"[{ID}] error on send. message:{message.GetType()}, error:{e}");
-        }
+        await SendMessageAsync(client.GetStream(), message, cryptor, ct);
     }
 
     public void Close()
@@ -56,40 +48,12 @@ public class Channel
         client.Close();
     }
 
-    public async Task BeginReceiveAsync(bool handshakeAsServer, CancellationToken ct)
+    public async Task<IMessage> ReadMessageAsync(CancellationToken ct)
     {
-        if (client.Connected == false)
-            throw new InvalidOperationException($"not a connected channel : {ID}");
-        try
-        {
-            var handshaker = new Handshaker(client.GetStream());
-            cryptor = handshakeAsServer
-                ? await handshaker.HandshakeAsServerAsync(ct)
-                : await handshaker.HandshakeAsClientAsync(ct);
-            Connected(this);
-            ct.ThrowIfCancellationRequested();
-            await LoopReadAsync(ct);
-        }
-        catch (Exception e)
-        {
-            Closed(this, e);
-            Close();
-        }
-    }
-
-    private async Task LoopReadAsync(CancellationToken ct)
-    {
-        var buffer = new byte[1_024 * 20]; // 안정적인 서비스를 위해 가장 큰 메시지 크기로. (가변인 경우 잘못된 데이터에 의해 위험)
         var stream = client.GetStream();
-        while (true)
-        {
-            var message = await ReadMessageAsync(stream, buffer, cryptor, ct);
-            // TODO: 성능을 올리려면 message 를 별도 queue 로 빼고 worker thread 이용
-            dispatcher.Dispatch(this, message);
-            await Task.Yield();
-            ct.ThrowIfCancellationRequested();
-        }
+        return await ReadMessageAsync(stream, buffer, cryptor, ct);
     }
+    #endregion IChannel implementation
 
     internal static async Task SendMessageAsync(
         NetworkStream stream,

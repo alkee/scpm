@@ -109,3 +109,25 @@ Encepytion 시에 `CryptoStream` 를 사용하는데,
 이 때 `.Flush()` 를 사용하면 aes padding 을 사용하지 않는 듯 해
 `.FlushFinalBlock()` 를 호출하도록 변경해 동작 확인.
 
+### Channel read/write(receive/send) 에 대한 고민
+
+```cs
+    public async Task<IMessage> ReadMessageAsync(CancellationToken ct)
+    {
+        var buffer = new byte[1_024 * 20]; // 안정적인 서비스를 위해 가장 큰 메시지 크기로. (가변인 경우 잘못된 데이터에 의해 위험)
+        var stream = client.GetStream();
+        return await ReadMessageAsync(stream, buffer, cryptor, ct);
+    }
+```
+
+와 같이 message 를 하나씩 read 하도록 message 도 async-await 으로하고,
+exception 이나 null return 으로 closed 를 구현하는 경우.. 
+Dispatcher 를 Channel 에서 분리할 수 있고 별도의 event 는 불필요.
+server 에서는 별도의 message loop 함수를 connection 마다 생성해
+실행하는 방식. Channel 에 HandshakeAsync 를 명시적으로 호출할 수도 있어야..
+
+Server 에서 Channel 을 생성하고 결국 어떤 형태로든 connection 과 연결해 주어야 하니
+의존성은 피할 수 없음. 다만 dispatcher 는 의존성을 줄일 수 있을 듯.
+
+다수의 channel event 를 처리해야하는 server 는 어쩔 수 없이 event 방식으로 유지.
+Chnnael 및 Client 는 async/await 방식으로 유지.

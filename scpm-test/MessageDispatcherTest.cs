@@ -9,7 +9,7 @@ public class MessageDispatcherTest
 {
     private class TestHandler
     {
-        public Type lastMessageType = typeof(object);
+        internal Type lastMessageType { get; private set; } = typeof(object);
 
         [MessageHandler]
         public void Handle(object sender, TestMessage1 message)
@@ -92,6 +92,13 @@ public class MessageDispatcherTest
     [Fact]
     public void TestDispatch()
     {
-        var dispatcher = new TestDispatcher(new());
+        var handler = new TestHandler();
+        var dispatcher = new TestDispatcher(handler);
+        dispatcher.Dispatch(this, new TestMessage1
+        {
+            Message1 = "msg1",
+            Message2 = "msg2"
+        });
+        Assert.Equal(typeof(TestMessage1), handler.lastMessageType);
     }
 }

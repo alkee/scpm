@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.Sockets;
 
 using Google.Protobuf;
@@ -7,60 +6,40 @@ namespace scpm.Net;
 
 public class Client
 {
-    public event Action<Channel> Connected = delegate { };
-    public event Action<Channel, Exception> Disconnected = delegate { };
-    /// False before the security has handshaked
-    public bool IsConnected { get; private set; } = false;
+    public bool IsConnected => channel != null;
 
     private readonly TcpClient client;
-    private readonly MessageDispatcher<Channel> dispatcher;
     private Channel? channel = null;
+    private static readonly Handshaker handshaker = new ClientHandshaker();
 
-    public Client(MessageDispatcher<Channel> dispatcher)
+    public Client()
     {
-        this.dispatcher = dispatcher;
         this.client = new();
     }
 
-    public Client(TcpClient connectedClient, MessageDispatcher<Channel> dispatcher)
+    public async Task ConnectAsync(string host, int tcpPort, CancellationToken ct = default)
     {
-        this.channel = new(connectedClient, dispatcher);
-        this.dispatcher = dispatcher;
-        this.client = connectedClient;
-    }
-
-    public async Task SendAsync(IMessage message)
-    {
-        if (IsConnected == false || channel == null)
-            throw new InvalidOperationException($"unable to send before handshake");
-        await channel.SendAsync(message);
-    }
-
-    public async Task BeginAsync(string host, int tcpPort, CancellationToken ct = default)
-    {
-        IsConnected = false;
-        Debug.WriteLine($"{GetType()} connecting: {host}:{tcpPort}");
-        await client.ConnectAsync(host, tcpPort);
-        if (client.Connected == false) return;
-        channel = new Channel(client, dispatcher);
-        channel.Closed += (channel, exception) =>
-        {
-            Debug.WriteLine($"[{channel.ID}] closed. error: {exception}");
-            IsConnected = false;
-            Disconnected(channel, exception);
-        };
-        channel.Connected += (channel) =>
-        {
-            Debug.WriteLine($"[{channel.ID}] handshaked on client");
-            IsConnected = true;
-            Connected(channel);
-        };
-        Debug.WriteLine($"[{channel.ID}] connected, now receiving.");
-        await channel.BeginReceiveAsync(false, ct);
+        await client.ConnectAsync(host, tcpPort, ct);
+        var crpytor = await handshaker.HandshakeAsync(client.GetStream(), ct);
+        channel = new Channel(client, crpytor);
     }
 
     public void Close()
     {
         channel?.Close();
+    }
+
+    public async Task<IMessage> ReadMessageAsync(CancellationToken ct)
+    {
+        if (channel == null)
+            throw new InvalidOperationException($"Not connected");
+        return await channel.ReadMessageAsync(ct);
+    }
+
+    public async Task SendAsync(IMessage message, CancellationToken ct = default)
+    {
+        if (channel == null)
+            throw new InvalidOperationException($"Not connected");
+        await channel.SendAsync(message, ct);
     }
 }

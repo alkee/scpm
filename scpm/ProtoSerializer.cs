@@ -24,15 +24,18 @@ internal static class ProtoSerializer
     }
 
     /// <returns>
-    ///     Deserialized message or null(when failed)
+    ///     Deserialized message
     /// </returns>
+    /// <exception cref="ArgumentException">
+    ///     Insufficient source size
+    /// </exception>
     /// <exception cref="ApplicationException">
     ///     When unknown message type id
     /// </exception>
-    public static IMessage? Deserialize(ReadOnlySpan<byte> source)
+    public static IMessage Deserialize(ReadOnlySpan<byte> source)
     {
-        if (source.Length <= sizeof(Int32)) // invalid type information
-            return null;
+        if (source.Length < sizeof(Int32)) // invalid type information
+            throw new ArgumentException($"Not enough size to deserialize", nameof(source));
         var typeId = BitConverter.ToInt32(source);
         if (protoMessages.TryGetValue(typeId, out MessageDescriptor? descriptor) == false)
         {

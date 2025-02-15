@@ -1,62 +1,81 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using Google.Protobuf;
 
 namespace scpm.Net;
 
 public class Server
 {
-    public event Action<Channel> Connected = delegate { };
-    public event Action<Channel> Closed = delegate { };
+    public event Action<IChannel> Handshaked = delegate { };
+    public event Action<IChannel, IMessage> MessageReceived = delegate { };
+    public event Action<IChannel> Closed = delegate { };
 
     private readonly int tcpPort;
-    private readonly MessageDispatcher<Channel> dispatcher;
-    private readonly List<Channel> channels = [];
+    private static readonly Handshaker handshaker = new ServerHandshaker();
 
-    public bool IsListening { get; private set; } = false;
-
-    public Server(MessageDispatcher<Channel> dispatcher, int tcpPort)
+    public Server(int tcpPort)
     {
         this.tcpPort = tcpPort;
-        this.dispatcher = dispatcher;
     }
 
     public async Task StartAsync(CancellationToken ct)
     {
         using var listener = new TcpListener(IPAddress.Any, tcpPort);
         listener.Start();
-
-        using var releaser = Defer.Create(() =>
-        {
-            foreach (var channel in channels)
-                channel.Close();
-            channels.Clear();
-            IsListening = false;
-        });
-
-        IsListening = true;
         Debug.WriteLine($"{GetType()} listening: {tcpPort}");
-        while (true)
+
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            var client = await listener.AcceptTcpClientAsync(ct);
-            var channel = new Channel(client, dispatcher);
-            Debug.WriteLine($"[{channel.ID}] Accepted");
-            channel.Connected += (channel) =>
+            while (ct.IsCancellationRequested == false)
             {
-                Debug.WriteLine($"[{channel.ID}] handshaked on server");
-                Connected(channel);
-            };
-            channel.Closed += (channel, exception) =>
-            {
-                Debug.WriteLine($"[{channel.ID}] connection closed. error: {exception}");
-                lock (channels) channels.Remove(channel);
-                Closed(channel);
-            };
-            lock (channels) channels.Add(channel);
-            channel.SetDispatcher(dispatcher);
-            _ = channel.BeginReceiveAsync(true, ct);
+                ct.ThrowIfCancellationRequested();
+                var client = await listener.AcceptTcpClientAsync(ct);
+                _ = KeepReceivingMessage(client, ct);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine($"Error on accepting: {e}");
+            return;
+        }
+        finally
+        {
+            listener.Stop();
+            listener.Dispose();
         }
     }
 
+    private async Task KeepReceivingMessage(TcpClient client, CancellationToken ct)
+    {
+        IChannel? c = null;
+        try
+        {
+            var cryptor = await handshaker.HandshakeAsync(client.GetStream(), ct);
+            var channel = new Channel(client, cryptor);
+            c = channel;
+            var available = client.GetStream().DataAvailable;
+            Handshaked(channel);
+            while (channel.IsConnected && ct.IsCancellationRequested == false)
+            {
+                ct.ThrowIfCancellationRequested();
+                var message = await channel.ReadMessageAsync(ct);
+                MessageReceived(channel, message);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine($"Error: {e}");
+#if DEBUG
+            throw;
+#else
+            return;
+#endif
+        }
+        finally
+        {
+            if (c != null) Closed(c);
+            client.Dispose();
+        }
+    }
 }
