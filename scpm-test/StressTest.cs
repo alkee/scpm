@@ -5,7 +5,9 @@ namespace scpm_test;
 
 public class StressTest
 {
-    const int TEST_PORT = 4684;
+    // 각 TestClass 별로 서로다른 port 를 사용하도록 해야 동시 테스트가 가능
+    const int TEST_PORT = 9060;
+
     [Theory]
     [InlineData(100, 15.0f)]
     public async Task ConnectionTest(int numberOfConnection, float durationSeconds)

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Google.Protobuf;
 using scpm.Net;
 
@@ -6,6 +5,7 @@ namespace scpm_test;
 
 public class ServerClientTest
 {
+    // 각 TestClass 별로 서로다른 port 를 사용하도록 해야 동시 테스트가 가능
     private const int TEST_PORT = 4684;
 
     [Fact]
