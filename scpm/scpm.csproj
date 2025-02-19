@@ -1,9 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <TargetFrameworks>net9.0;netstandard2.1</TargetFrameworks>
     <Nullable>enable</Nullable>
+
+    <!-- to support netstandard2.1 -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+
+    <!-- for nuget package build
+      https://learn.microsoft.com/nuget/quickstart/create-and-publish-a-package-using-the-dotnet-cli -->
+    <PackageId>net.alkee.scpm</PackageId>
+    <!-- Version 의 경우 GitVersion.MsBuild 에 의해 작성됨 -->
+    <Authors>alkee</Authors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +23,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="GitVersion.MsBuild" Version="6.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

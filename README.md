@@ -182,3 +182,91 @@ link 전 timeout `CancelationTokenSource` 을 `TryReset()` 해서는 timeout res
 와 같은 방식만 적용 가능.
 
 
+### netstandard2.1 빌드 지원
+
+unity 환경 에서도 사용할 수 있도록, netstandard2.1 빌드를 지원해볼 예정.
+`.csproj` 를 
+
+```xml
+   <PropertyGroup>
+    <TargetFrameworks>net9.0;netstandard2.1</TargetFrameworks>
+    <Nullable>enable</Nullable>
+
+    <!-- to support netstandard2.1 -->
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+ ```
+
+와 같이 수정해 보았으나, `~is not available in C# 8.0~`(CS8400 error) 발생.
+
+```xml
+    <LangVersion>12.0</LangVersion>
+```
+
+으로 수동으로 설정해주어야 함. 여전히 빌드하면 오류..
+
+```
+dotnet build /Users/alkee/Documents/git/scpm/scpm.sln /property:GenerateFullPaths=true /consoleloggerparameters:NoSummary /p:Configuration=Debug /p:Platform="Any CPU" 
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+/Users/alkee/Documents/git/scpm/scpm/MessageDispatcher.cs(17,19): error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.RequiredMemberAttribute..ctor' [/Users/alkee/Documents/git/scpm/scpm/scpm.csproj::TargetFramework=netstandard2.1]
+/Users/alkee/Documents/git/scpm/scpm/MessageDispatcher.cs(17,19): error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute..ctor' [/Users/alkee/Documents/git/scpm/scpm/scpm.csproj::TargetFramework=netstandard2.1]
+  scpm -> /Users/alkee/Documents/git/scpm/scpm/bin/Debug/net9.0/scpm.dll
+  scpm-test -> /Users/alkee/Documents/git/scpm/scpm-test/bin/Debug/net9.0/scpm-test.dll
+```
+
+ `Runtime.CompilerServices.RequiredMemberAttribute` 가 netstandard2.1 에서는
+ 지원이 안되는 모양. 호환성 연결을 담당하는 `NetStandard1.2.cs` 파일을 만들어
+ 여기에 `RequiredMemberAttribute` 생성. 하지만..
+
+ ```
+ /Users/alkee/Documents/git/scpm/scpm/Net/Server.cs(37,9): error CS1674: 'TcpListener': type used in a using statement must implement 'System.IDisposable'. [/Users/alkee/Documents/git/scpm/scpm/scpm.csproj::TargetFramework=netstandard2.1]
+/Users/alkee/Documents/git/scpm/scpm/Net/Server.cs(46,45): error CS1501: No overload for method 'AcceptTcpClientAsync' takes 1 arguments [/Users/alkee/Documents/git/scpm/scpm/scpm.csproj::TargetFramework=netstandard2.1]
+/Users/alkee/Documents/git/scpm/scpm/Net/Server.cs(58,22): error CS1061: 'TcpListener' does not contain a definition for 'Dispose' and no accessible extension method 'Dispose' accepting a first argument of type 'TcpListener' could be found (are you missing a using directive or an assembly reference?) [/Users/alkee/Documents/git/scpm/scpm/scpm.csproj::TargetFramework=netstandard2.1]
+/Users/alkee/Documents/git/scpm/scpm/Net/Client.cs(27,22): error CS1501: No overload for method 'ConnectAsync' takes 3 arguments [/Users/alkee/Documents/git/scpm/scpm/scpm.csproj::TargetFramework=netstandard2.1]
+  scpm-test -> /Users/alkee/Documents/git/scpm/scpm-test/bin/Debug/net9.0/scpm-test.dll
+```
+
+와 같은 추가적인 호환성 관련 오류가 나타남. 왜 한번에 안나오고 하나씩 해결하면
+추가로 나타나는 것인지... 직접 `dotnet build` 해보면 메시지가 좀 더 명확해보임.
+
+ ```
+ (base) ü/Documents/git/scpm % dotnet build
+Restore complete (0.4s)
+  scpm net9.0 succeeded (0.3s) → scpm/bin/Debug/net9.0/scpm.dll
+  scpm netstandard2.1 failed with 4 error(s) (0.4s)
+    /Users/alkee/Documents/git/scpm/scpm/Net/Client.cs(27,22): error CS1501: No overload for method 'ConnectAsync' takes 3 arguments
+    /Users/alkee/Documents/git/scpm/scpm/Net/Server.cs(37,9): error CS1674: 'TcpListener': type used in a using statement must implement 'System.IDisposable'.
+    /Users/alkee/Documents/git/scpm/scpm/Net/Server.cs(46,45): error CS1501: No overload for method 'AcceptTcpClientAsync' takes 1 arguments
+    /Users/alkee/Documents/git/scpm/scpm/Net/Server.cs(58,22): error CS1061: 'TcpListener' does not contain a definition for 'Dispose' and no accessible extension method 'Dispose' accepting a first argument of type 'TcpListener' could be found (are you missing a using directive or an assembly reference?)
+  scpm-test succeeded (0.2s) → scpm-test/bin/Debug/net9.0/scpm-test.dll
+```
+
+지원하지 않는 함수는 
+
+```cs
+        public static async Task ConnectAsync(this TcpClient client, string host, int port, CancellationToken ct)
+        {
+            await Task.Run(async () => {
+                await client.ConnectAsync(host, port);
+            }, ct);
+        }
+
+        public static async Task<TcpClient> AcceptTcpClientAsync (this TcpListener listener, CancellationToken ct)
+        {
+            return await Task.Run(async () => {
+                return await listener.AcceptTcpClientAsync();
+            }, ct);
+        }
+```
+와 같이 extension 으로 구현하고, NetStandard2.1 에 구현되어있지않은 TcpListener.IDisposable
+은 `#if` 로 `using` 을 제거하는 방식으로..
+
+```cs
+#if NETSTANDARD
+        var listener = new TcpListener(IPAddress.Any, tcpPort);
+#else
+        using var listener = new TcpListener(IPAddress.Any, tcpPort);
+#endif
+```
+

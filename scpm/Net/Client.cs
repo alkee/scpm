@@ -1,5 +1,7 @@
+using System;
 using System.Net.Sockets;
-
+using System.Threading;
+using System.Threading.Tasks;
 using Google.Protobuf;
 
 namespace scpm.Net;
@@ -22,6 +24,8 @@ public class Client
 
     public async Task ConnectAsync(string host, int tcpPort, CancellationToken ct = default)
     {
+        var t = client.ConnectAsync(host, tcpPort, ct);
+        
         await client.ConnectAsync(host, tcpPort, ct);
         var crpytor = await handshaker.HandshakeAsync(client.GetStream(), ct);
         channel = new Channel(client, crpytor);

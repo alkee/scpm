@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using Google.Protobuf;
 
@@ -15,6 +18,7 @@ public class MessageDispatcher<T_Sender>
     {
         public object? Instance; // null if the Method is `static`.
         public required MethodInfo Method;
+
         public override bool Equals(object? obj)
         {
             if (obj is Handler handler)

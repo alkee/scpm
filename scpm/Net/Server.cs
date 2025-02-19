@@ -1,6 +1,9 @@
+using System;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
 using Google.Protobuf;
 
 namespace scpm.Net;
@@ -31,7 +34,11 @@ public class Server
 
     public async Task StartAsync(CancellationToken ct)
     {
+#if NETSTANDARD
+        var listener = new TcpListener(IPAddress.Any, tcpPort);
+#else
         using var listener = new TcpListener(IPAddress.Any, tcpPort);
+#endif
         listener.Start();
         Debug.WriteLine($"{GetType()} listening: {tcpPort}");
 
@@ -52,7 +59,6 @@ public class Server
         finally
         {
             listener.Stop();
-            listener.Dispose();
         }
     }
 
