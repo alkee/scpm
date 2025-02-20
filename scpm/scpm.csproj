@@ -9,10 +9,26 @@
     <LangVersion>12.0</LangVersion>
 
     <!-- for nuget package build
-      https://learn.microsoft.com/nuget/quickstart/create-and-publish-a-package-using-the-dotnet-cli -->
+      https://learn.microsoft.com/nuget/quickstart/create-and-publish-a-package-using-the-dotnet-cli
+      https://learn.microsoft.com/nuget/create-packages/package-authoring-best-practices
+      -->
     <PackageId>net.alkee.scpm</PackageId>
     <!-- Version 의 경우 GitVersion.MsBuild 에 의해 작성됨 -->
     <Authors>alkee</Authors>
+    <Description>
+      Single Connection Protobuf Messaging library.
+    </Description>
+    <IncludeContentInPack>true</IncludeContentInPack>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) alkee 2025.</Copyright>
+    <PackageProjectUrl>https://github.com/alkee/scpm</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/alkee/scpm.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>dotnet, protobuf, network, security, tcp</PackageTags>
+    <PackageReleaseNotes>
+      first release
+    </PackageReleaseNotes>
+    <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +47,11 @@
 
   <ItemGroup>
     <Protobuf Include="proto\scpm-handshake.proto" GrpcServices="None" />
+  </ItemGroup>
+
+  <ItemGroup> <!-- resources -->
+    <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="LICENSE.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>
