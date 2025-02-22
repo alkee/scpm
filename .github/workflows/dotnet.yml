@@ -11,15 +11,16 @@ on:
 
 jobs:
   build:
-
+    # https://github.com/actions/setup-dotnet/issues/562#issuecomment-2516103188
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - name: checkout
+      uses: actions/checkout@v4
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 9.0.x
+        dotnet-version: '9.0.x'
         # cache: true # https://github.com/actions/setup-dotnet/issues/471#issuecomment-1742911727
     - name: Restore dependencies
       run: dotnet restore
