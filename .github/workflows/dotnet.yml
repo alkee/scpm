@@ -18,7 +18,8 @@ jobs:
     # https://github.com/actions/checkout
     - name: checkout
       uses: actions/checkout@v4
-      fetch-depth: '0' # Clone full repo history for GitVersion to work
+      with:
+        fetch-depth: '0' # Clone full repo history for GitVersion to work
     # https://github.com/actions/setup-dotnet
     - name: Setup .NET 9.0
       uses: actions/setup-dotnet@v4
