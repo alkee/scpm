@@ -23,6 +23,8 @@ jobs:
       with:
         dotnet-version: '9.0.x'
         # cache: true # https://github.com/actions/setup-dotnet/issues/471#issuecomment-1742911727
+    - name: confirming
+      run: 'pwd && ls && ls /home/runner/work/scpm && /home/runner/work/scpm/scpm'
     - name: Display dotnet version
       run: dotnet --version
     - name: Restore dependencies
