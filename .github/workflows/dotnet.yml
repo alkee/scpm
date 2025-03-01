@@ -17,11 +17,14 @@ jobs:
     steps:
     - name: checkout
       uses: actions/checkout@v4
+    # https://github.com/actions/setup-dotnet
     - name: Setup .NET 9.0
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'      
+        dotnet-version: '9.0.x'
         # cache: true # https://github.com/actions/setup-dotnet/issues/471#issuecomment-1742911727
+    - name: Display dotnet version
+      run: dotnet --version
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
