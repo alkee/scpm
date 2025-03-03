@@ -1,0 +1,34 @@
+name: Unit test for PR
+
+# https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    # https://github.com/actions/setup-dotnet/issues/562#issuecomment-2516103188
+    runs-on: ubuntu-latest
+
+    steps:
+    # https://github.com/actions/checkout
+    - name: checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: '0' # Clone full repo history for GitVersion to work
+    # https://github.com/actions/setup-dotnet
+    - name: Setup .NET 9.0
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        # cache: true # https://github.com/actions/setup-dotnet/issues/471#issuecomment-1742911727
+    - name: Display dotnet version
+      run: dotnet --version
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --no-restore
+    - name: Test
+      run: dotnet test --no-build --verbosity normal
